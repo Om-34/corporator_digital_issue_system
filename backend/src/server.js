@@ -7,6 +7,8 @@ const reasonsRoutes = require("./routes/reasons.routes");
 const complaintsRoutes = require("./routes/complaints.routes");
 const usersRoutes = require("./routes/users.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
+const activityRoutes = require("./routes/activity.routes");
+
 
 const app = express();
 
@@ -22,6 +24,8 @@ app.use("/api/reasons", reasonsRoutes);
 app.use("/api/complaints", complaintsRoutes);
 app.use("/api/users", usersRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/activity", activityRoutes);
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

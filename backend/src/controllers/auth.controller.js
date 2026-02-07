@@ -2,6 +2,8 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { v4: uuidv4 } = require("uuid");
 const pool = require("../config/db");
+// ✅ ADDED: Import Helper
+const { logActivity } = require("./activity.controller");
 
 // ============================
 // REGISTER OFFICE + ADMIN
@@ -71,6 +73,9 @@ exports.login = async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
+
+    // ✅ ADDED: Auto-Log Login Activity
+    await logActivity(user.id, user.name, "LOGIN", "User logged in successfully");
 
     const token = jwt.sign(
       {

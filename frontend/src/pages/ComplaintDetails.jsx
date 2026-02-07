@@ -13,6 +13,7 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  Divider,
 } from "@mui/material";
 
 const ComplaintDetails = () => {
@@ -28,20 +29,20 @@ const ComplaintDetails = () => {
     fetchHistory();
   }, []);
 
-  // LOGIC UNCHANGED
+  // 🔒 LOGIC UNCHANGED
   const fetchComplaint = async () => {
     const res = await api.get("/complaints");
     const found = res.data.find((c) => c.id === id);
     setComplaint(found);
   };
 
-  // LOGIC UNCHANGED
+  // 🔒 LOGIC UNCHANGED
   const fetchHistory = async () => {
     const res = await api.get(`/complaints/${id}/status-history`);
     setHistory(res.data);
   };
 
-  // LOGIC UNCHANGED
+  // 🔒 LOGIC UNCHANGED
   const updateStatus = async () => {
     if (!newStatus) {
       alert("Select status");
@@ -58,6 +59,26 @@ const ComplaintDetails = () => {
     fetchHistory();
   };
 
+  // =========================
+  // 📍 OPEN IN GOOGLE MAPS
+  // =========================
+  const openInMaps = () => {
+    const fullAddress = [
+      complaint.address,
+      complaint.area,
+      complaint.ward_no ? `Ward ${complaint.ward_no}` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    // Using standard Google Maps Search URL
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      fullAddress
+    )}`;
+
+    window.open(mapsUrl, "_blank");
+  };
+
   if (!complaint) {
     return (
       <Box sx={{ p: 3 }}>
@@ -72,10 +93,52 @@ const ComplaintDetails = () => {
         Complaint Details
       </Typography>
 
+      {/* BASIC INFO */}
       <Box sx={{ mb: 2 }}>
         <Typography><strong>Issue No:</strong> {complaint.issue_no}</Typography>
         <Typography><strong>Person:</strong> {complaint.person_name}</Typography>
         <Typography><strong>Category:</strong> {complaint.reason_name}</Typography>
+
+        {/* ✅ NEW: ADDRESS & MAP BUTTON */}
+        <Typography sx={{ mt: 1 }}>
+          <strong>Address:</strong> {complaint.address || "-"}
+        </Typography>
+
+        <Typography sx={{ mt: 0.5 }}>
+          <strong>Area:</strong> {complaint.area || "-"}
+        </Typography>
+
+        <Typography sx={{ mt: 0.5 }}>
+          <strong>Ward:</strong> {complaint.ward_no || "-"}
+        </Typography>
+
+        <Button
+          sx={{ mt: 2 }}
+          variant="outlined"
+          onClick={openInMaps}
+        >
+          📍 Open in Google Maps
+        </Button>
+
+        {/* DETAILED COMPLAINT SECTION */}
+        <Typography sx={{ mt: 2 }}>
+          <strong>Detailed Complaint:</strong>
+        </Typography>
+
+        <Box
+          sx={{
+            mt: 1,
+            mb: 2,
+            p: 2,
+            backgroundColor: "#f9fafb",
+            border: "1px solid #e5e7eb",
+            borderRadius: 1,
+          }}
+        >
+          <Typography variant="body2">
+            {complaint.description || "No description provided"}
+          </Typography>
+        </Box>
 
         <Box sx={{ mt: 1 }}>
           <strong>Status:</strong>{" "}
@@ -83,6 +146,9 @@ const ComplaintDetails = () => {
         </Box>
       </Box>
 
+      <Divider sx={{ my: 2 }} />
+
+      {/* UPDATE STATUS */}
       <Box sx={{ mb: 3 }}>
         <Typography variant="subtitle1">Update Status</Typography>
 
@@ -119,6 +185,7 @@ const ComplaintDetails = () => {
         </Box>
       </Box>
 
+      {/* STATUS HISTORY */}
       <Typography variant="subtitle1" gutterBottom>
         Status History
       </Typography>

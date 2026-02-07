@@ -1,6 +1,8 @@
 const { v4: uuidv4 } = require("uuid");
 const pool = require("../config/db");
 const generateIssueNumber = require("../utils/issueNumberGenerator");
+// ✅ ADDED: Import Helper
+const { logActivity } = require("./activity.controller");
 
 // ============================
 // CREATE COMPLAINT
@@ -13,6 +15,8 @@ exports.createComplaint = async (req, res) => {
     gender,
     reasonId,
     description,
+    ward_no,
+    area,
   } = req.body;
 
   if (!reasonId || !description) {
@@ -26,7 +30,7 @@ exports.createComplaint = async (req, res) => {
     const officeId = req.user.officeId;
     const writtenByUserId = req.user.userId;
 
-    // Generate unique issue number
+    // Generate unique issue number (UNCHANGED)
     const issueNo = await generateIssueNumber(officeId);
 
     await pool.query(
@@ -41,11 +45,13 @@ exports.createComplaint = async (req, res) => {
         gender,
         reason_id,
         description,
+        ward_no,
+        area,
         written_by_user_id,
         status
       )
       VALUES (
-        $1,$2,$3,CURRENT_DATE,$4,$5,$6,$7,$8,$9,$10,'NEW'
+        $1,$2,$3,CURRENT_DATE,$4,$5,$6,$7,$8,$9,$10,$11,$12,'NEW'
       )`,
       [
         complaintId,
@@ -57,9 +63,17 @@ exports.createComplaint = async (req, res) => {
         gender,
         reasonId,
         description,
+        ward_no || null,
+        area || null,
         writtenByUserId,
       ]
     );
+
+    // ✅ FIXED: Fetch actual user name instead of hardcoded "Staff"
+    const userRes = await pool.query(`SELECT name FROM users WHERE id = $1`, [writtenByUserId]);
+    const userName = userRes.rows[0]?.name || "Staff";
+
+    await logActivity(writtenByUserId, userName, "NEW COMPLAINT", `Created complaint: ${issueNo}`);
 
     res.status(201).json({
       message: "Complaint registered successfully",
@@ -89,6 +103,8 @@ exports.getAllComplaints = async (req, res) => {
         c.gender,
         c.description,
         c.status,
+        c.ward_no,
+        c.area,
         r.reason_name,
         u.name AS written_by
        FROM complaints c
@@ -123,7 +139,7 @@ exports.updateComplaintStatus = async (req, res) => {
     const officeId = req.user.officeId;
     const userId = req.user.userId;
 
-    // Get existing complaint
+    // Verify complaint
     const complaintResult = await pool.query(
       `SELECT status FROM complaints
        WHERE id = $1 AND office_id = $2`,
@@ -136,7 +152,7 @@ exports.updateComplaintStatus = async (req, res) => {
 
     const oldStatus = complaintResult.rows[0].status;
 
-    // Update complaint status
+    // Update status
     await pool.query(
       `UPDATE complaints
        SET status = $1, updated_at = CURRENT_TIMESTAMP
@@ -144,8 +160,8 @@ exports.updateComplaintStatus = async (req, res) => {
       [newStatus, id]
     );
 
-    // Insert into status history
-    const historyId = require("uuid").v4();
+    // Insert status history
+    const historyId = uuidv4();
 
     await pool.query(
       `INSERT INTO status_history (
@@ -159,12 +175,19 @@ exports.updateComplaintStatus = async (req, res) => {
       [historyId, id, oldStatus, newStatus, userId]
     );
 
+    // ✅ FIXED: Fetch actual user name instead of hardcoded "Staff"
+    const userRes = await pool.query(`SELECT name FROM users WHERE id = $1`, [userId]);
+    const userName = userRes.rows[0]?.name || "Staff";
+
+    await logActivity(userId, userName, "STATUS UPDATE", `Updated status to ${newStatus}`);
+
     res.json({ message: "Complaint status updated successfully" });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
   }
 };
+
 // ============================
 // GET STATUS HISTORY
 // ============================

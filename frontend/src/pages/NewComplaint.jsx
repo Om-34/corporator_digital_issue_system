@@ -26,6 +26,9 @@ const NewComplaint = () => {
   const [gender, setGender] = useState("");
   const [reasonId, setReasonId] = useState("");
   const [description, setDescription] = useState("");
+  const [wardNo, setWardNo] = useState("");
+  const [area, setArea] = useState("");
+
 
   // Redirect if not logged in
   useEffect(() => {
@@ -68,6 +71,8 @@ const NewComplaint = () => {
         gender,
         reasonId,
         description,
+        ward_no: wardNo,
+        area,
       });
 
       alert("Complaint registered successfully");
@@ -114,6 +119,24 @@ const NewComplaint = () => {
         />
 
         <TextField
+          fullWidth
+          label="Ward Number"
+          margin="normal"
+          value={wardNo}
+          onChange={(e) => setWardNo(e.target.value)}
+          placeholder="e.g. 12"
+        />
+
+        <TextField
+          fullWidth
+          label="Area / Locality"
+          margin="normal"
+          value={area}
+          onChange={(e) => setArea(e.target.value)}
+          placeholder="e.g. Shivaji Nagar"
+        />
+
+        <TextField
           select
           label="Gender"
           fullWidth
@@ -125,6 +148,8 @@ const NewComplaint = () => {
           <MenuItem value="Male">Male</MenuItem>
           <MenuItem value="Female">Female</MenuItem>
           <MenuItem value="Other">Other</MenuItem>
+          <MenuItem value="Prefer not to say">Prefer not to say</MenuItem>
+          <MenuItem value="Group">Group</MenuItem>
         </TextField>
 
         <TextField
