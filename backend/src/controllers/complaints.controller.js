@@ -175,11 +175,48 @@ exports.updateComplaintStatus = async (req, res) => {
       [historyId, id, oldStatus, newStatus, userId]
     );
 
-    // ✅ FIXED: Fetch actual user name instead of hardcoded "Staff"
+    // ✅ Fetch actual user name
     const userRes = await pool.query(`SELECT name FROM users WHERE id = $1`, [userId]);
     const userName = userRes.rows[0]?.name || "Staff";
 
     await logActivity(userId, userName, "STATUS UPDATE", `Updated status to ${newStatus}`);
+
+    // ==========================================
+    // 📩 SMS NOTIFICATION (ON COMPLETION)
+    // ==========================================
+    if (newStatus === "COMPLETED") {
+      try {
+        // Use the existing service path
+        const { sendSMS } = require("../services/sms.service");
+
+        const complaintInfo = await pool.query(
+          `SELECT issue_no, contact FROM complaints WHERE id = $1`,
+          [id]
+        );
+
+        if (complaintInfo.rows.length > 0) {
+          const { issue_no, contact } = complaintInfo.rows[0];
+
+          if (contact) {
+            // Send SMS
+            await sendSMS({
+              phone: contact,
+              message: `Your complaint ${issue_no} has been resolved. Thank you.`,
+            });
+
+            // Log SMS Activity (Using existing logger signature)
+            await logActivity(
+              userId,
+              userName,
+              "SMS_SENT",
+              `SMS sent to ${contact} for complaint ${issue_no}`
+            );
+          }
+        }
+      } catch (err) {
+        console.error("SMS Logic Failed:", err.message);
+      }
+    }
 
     res.json({ message: "Complaint status updated successfully" });
   } catch (error) {

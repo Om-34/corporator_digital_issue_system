@@ -16,6 +16,11 @@ import {
   Divider,
 } from "@mui/material";
 
+// ✅ ADDED: Icons & PDF Tools
+import PrintIcon from "@mui/icons-material/Print";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+
 const ComplaintDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -31,15 +36,23 @@ const ComplaintDetails = () => {
 
   // 🔒 LOGIC UNCHANGED
   const fetchComplaint = async () => {
-    const res = await api.get("/complaints");
-    const found = res.data.find((c) => c.id === id);
-    setComplaint(found);
+    try {
+      const res = await api.get("/complaints");
+      const found = res.data.find((c) => c.id === id);
+      setComplaint(found);
+    } catch (error) {
+      console.error("Error fetching complaint:", error);
+    }
   };
 
   // 🔒 LOGIC UNCHANGED
   const fetchHistory = async () => {
-    const res = await api.get(`/complaints/${id}/status-history`);
-    setHistory(res.data);
+    try {
+      const res = await api.get(`/complaints/${id}/status-history`);
+      setHistory(res.data);
+    } catch (error) {
+      console.error("Error fetching history:", error);
+    }
   };
 
   // 🔒 LOGIC UNCHANGED
@@ -49,18 +62,23 @@ const ComplaintDetails = () => {
       return;
     }
 
-    await api.patch(`/complaints/${id}/status`, {
-      newStatus,
-    });
+    try {
+      await api.patch(`/complaints/${id}/status`, {
+        newStatus,
+      });
 
-    alert("Status updated");
-    setNewStatus("");
-    fetchComplaint();
-    fetchHistory();
+      alert("Status updated");
+      setNewStatus("");
+      fetchComplaint();
+      fetchHistory();
+    } catch (error) {
+      console.error("Error updating status:", error);
+      alert("Failed to update status");
+    }
   };
 
   // =========================
-  // 📍 OPEN IN GOOGLE MAPS
+  // 📍 OPEN IN GOOGLE MAPS (UNCHANGED)
   // =========================
   const openInMaps = () => {
     const fullAddress = [
@@ -72,11 +90,115 @@ const ComplaintDetails = () => {
       .join(", ");
 
     // Using standard Google Maps Search URL
-    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=$?q=${encodeURIComponent(
       fullAddress
     )}`;
 
     window.open(mapsUrl, "_blank");
+  };
+
+  // ==============================
+  // 🖨️ GENERATE WORK ORDER PDF (UPDATED)
+  // ==============================
+  const downloadWorkOrder = () => {
+    try {
+      const doc = new jsPDF("p", "mm", "a4");
+
+      /* ================= HEADER ================= */
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text("CORPORATOR OFFICE", 105, 15, { align: "center" });
+
+      doc.setFontSize(14);
+      doc.text("WORK ORDER / COMPLAINT JOB CARD", 105, 24, {
+        align: "center",
+      });
+
+      doc.setLineWidth(0.5);
+      doc.line(15, 28, 195, 28);
+
+      /* ================= ISSUE INFO ================= */
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+
+      doc.text(`Issue No: ${complaint.issue_no}`, 15, 36);
+      doc.text(
+        `Date: ${new Date(complaint.complaint_date).toLocaleDateString()}`,
+        150,
+        36
+      );
+
+      /* ================= STATUS ================= */
+      doc.setFont("helvetica", "bold");
+      doc.text(`Status: ${complaint.status}`, 15, 44);
+
+      /* ================= DETAILS TABLE ================= */
+      autoTable(doc, {
+        startY: 50,
+        head: [["Field", "Details"]],
+        body: [
+          ["Complainant Name", complaint.person_name],
+          ["Contact Number", complaint.contact || "-"],
+          [
+            "Ward / Area",
+            `${complaint.ward_no || "-"} / ${complaint.area || "-"}`,
+          ],
+          ["Address", complaint.address || "—"],
+          ["Category", complaint.reason_name],
+        ],
+        styles: {
+          fontSize: 11,
+          cellPadding: 4,
+        },
+        headStyles: {
+          fillColor: [25, 118, 210],
+          textColor: 255,
+        },
+        columnStyles: {
+          0: { fontStyle: "bold", cellWidth: 55 },
+          1: { cellWidth: 120 },
+        },
+      });
+
+      /* ================= DESCRIPTION ================= */
+      let y = doc.lastAutoTable.finalY + 10;
+
+      doc.setFont("helvetica", "bold");
+      doc.text("Detailed Complaint / Work Instructions:", 15, y);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+
+      const desc = doc.splitTextToSize(
+        complaint.description || "No description provided",
+        170
+      );
+
+      doc.text(desc, 15, y + 8);
+
+      /* ================= SIGNATURES ================= */
+      const signY = 260;
+
+      doc.line(15, signY, 80, signY);
+      doc.text("Worker Signature", 15, signY + 6);
+
+      doc.line(120, signY, 190, signY);
+      doc.text("Corporator Office Sign", 120, signY + 6);
+
+      /* ================= FOOTER ================= */
+      doc.setFontSize(9);
+      doc.text(
+        "This is a system-generated document",
+        105,
+        285,
+        { align: "center" }
+      );
+
+      doc.save(`Complaint_${complaint.issue_no}.pdf`);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to generate complaint PDF");
+    }
   };
 
   if (!complaint) {
@@ -89,17 +211,40 @@ const ComplaintDetails = () => {
 
   return (
     <Paper sx={{ p: 3, maxWidth: 800 }}>
-      <Typography variant="h6" gutterBottom>
-        Complaint Details
-      </Typography>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 2,
+        }}
+      >
+        <Typography variant="h6">Complaint Details</Typography>
+
+        {/* ✅ NEW: PRINT BUTTON */}
+        <Button
+          variant="contained"
+          color="secondary"
+          startIcon={<PrintIcon />}
+          onClick={downloadWorkOrder}
+          size="small"
+        >
+          Print Job Card
+        </Button>
+      </Box>
 
       {/* BASIC INFO */}
       <Box sx={{ mb: 2 }}>
-        <Typography><strong>Issue No:</strong> {complaint.issue_no}</Typography>
-        <Typography><strong>Person:</strong> {complaint.person_name}</Typography>
-        <Typography><strong>Category:</strong> {complaint.reason_name}</Typography>
+        <Typography>
+          <strong>Issue No:</strong> {complaint.issue_no}
+        </Typography>
+        <Typography>
+          <strong>Person:</strong> {complaint.person_name}
+        </Typography>
+        <Typography>
+          <strong>Category:</strong> {complaint.reason_name}
+        </Typography>
 
-        {/* ✅ NEW: ADDRESS & MAP BUTTON */}
         <Typography sx={{ mt: 1 }}>
           <strong>Address:</strong> {complaint.address || "-"}
         </Typography>
@@ -112,11 +257,7 @@ const ComplaintDetails = () => {
           <strong>Ward:</strong> {complaint.ward_no || "-"}
         </Typography>
 
-        <Button
-          sx={{ mt: 2 }}
-          variant="outlined"
-          onClick={openInMaps}
-        >
+        <Button sx={{ mt: 2 }} variant="outlined" onClick={openInMaps}>
           📍 Open in Google Maps
         </Button>
 
@@ -141,8 +282,7 @@ const ComplaintDetails = () => {
         </Box>
 
         <Box sx={{ mt: 1 }}>
-          <strong>Status:</strong>{" "}
-          <StatusChip status={complaint.status} />
+          <strong>Status:</strong> <StatusChip status={complaint.status} />
         </Box>
       </Box>
 
@@ -176,10 +316,7 @@ const ComplaintDetails = () => {
             COMPLETED
           </Button>
 
-          <Button
-            variant="contained"
-            onClick={updateStatus}
-          >
+          <Button variant="contained" onClick={updateStatus}>
             Save
           </Button>
         </Box>
