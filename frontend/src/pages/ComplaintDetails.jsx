@@ -27,11 +27,14 @@ const ComplaintDetails = () => {
 
   const [complaint, setComplaint] = useState(null);
   const [history, setHistory] = useState([]);
+  const [documents, setDocuments] = useState([]); // ✅ NEW: State for documents
   const [newStatus, setNewStatus] = useState("");
+  const [file, setFile] = useState(null); // ✅ ADDED: State for the file input
 
   useEffect(() => {
     fetchComplaint();
     fetchHistory();
+    fetchDocuments(); // ✅ NEW: Fetch docs on load
   }, []);
 
   // 🔒 LOGIC UNCHANGED
@@ -52,6 +55,52 @@ const ComplaintDetails = () => {
       setHistory(res.data);
     } catch (error) {
       console.error("Error fetching history:", error);
+    }
+  };
+
+  // ✅ NEW: Fetch Documents
+  const fetchDocuments = async () => {
+    try {
+      const res = await api.get(`/complaint-documents/${id}`);
+      setDocuments(res.data);
+    } catch (error) {
+      console.error("Error fetching documents:", error);
+    }
+  };
+
+  // ✅ ADDED: Your specific handleUpload logic
+  const handleUpload = async () => {
+    if (!file) {
+      alert("Select a file first");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("document", file); // 🔴 MUST MATCH multer
+
+    try {
+      await api.post(
+        `/complaint-documents/${id}`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+
+      alert("Document uploaded");
+      fetchDocuments();
+      setFile(null);
+    }  catch (err) {
+      console.error("UPLOAD ERROR:", err);
+
+      if (err.response) {
+        // Backend responded with reason (e.g., folder missing, DB error)
+        alert(err.response.data.message || "Server rejected the upload");
+      } else if (err.request) {
+        // Request was made but backend didn't respond (Server might be crashed)
+        alert("Server not reachable. Check if backend is running.");
+      } else {
+        // Something went wrong setting up the request
+        alert("Unexpected error occurred while uploading.");
+      }
     }
   };
 
@@ -89,8 +138,7 @@ const ComplaintDetails = () => {
       .filter(Boolean)
       .join(", ");
 
-    // Using standard Google Maps Search URL
-    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=$?q=${encodeURIComponent(
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
       fullAddress
     )}`;
 
@@ -221,7 +269,6 @@ const ComplaintDetails = () => {
       >
         <Typography variant="h6">Complaint Details</Typography>
 
-        {/* ✅ NEW: PRINT BUTTON */}
         <Button
           variant="contained"
           color="secondary"
@@ -261,7 +308,6 @@ const ComplaintDetails = () => {
           📍 Open in Google Maps
         </Button>
 
-        {/* DETAILED COMPLAINT SECTION */}
         <Typography sx={{ mt: 2 }}>
           <strong>Detailed Complaint:</strong>
         </Typography>
@@ -283,6 +329,65 @@ const ComplaintDetails = () => {
 
         <Box sx={{ mt: 1 }}>
           <strong>Status:</strong> <StatusChip status={complaint.status} />
+        </Box>
+      </Box>
+
+      <Divider sx={{ my: 3 }} />
+
+      {/* ================================== */}
+      {/* 📁 DIGITAL ARCHIVE (UPDATED)       */}
+      {/* ================================== */}
+      <Box sx={{ mb: 4, p: 2, border: "1px dashed #ccc", borderRadius: 2 }}>
+        <Typography variant="subtitle1" fontWeight="bold">
+          Attached Documents
+        </Typography>
+
+        <Box sx={{ mt: 2, mb: 2 }}>
+          {documents.length === 0 ? (
+            <Typography color="text.secondary">
+              No document attached
+            </Typography>
+          ) : (
+            documents.map((doc) => (
+              <Button
+                key={doc.id}
+                variant="outlined"
+                href={`http://localhost:5000${doc.file_path}`}
+                target="_blank"
+                sx={{ mr: 1, mt: 1 }}
+              >
+                View Document
+              </Button>
+            ))
+          )}
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        <Typography variant="subtitle2" gutterBottom sx={{ mt: 2 }}>
+          Add New Document
+        </Typography>
+        
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Button variant="contained" component="label" size="small">
+            {file ? file.name : "Choose File"}
+            <input
+              type="file"
+              hidden
+              accept="image/*,.pdf"
+              onChange={(e) => setFile(e.target.files[0])}
+            />
+          </Button>
+
+          <Button 
+            variant="contained" 
+            color="primary" 
+            size="small" 
+            onClick={handleUpload}
+            disabled={!file}
+          >
+            Upload
+          </Button>
         </Box>
       </Box>
 
@@ -368,10 +473,6 @@ const ComplaintDetails = () => {
     </Paper>
   );
 };
-
-/* =====================
-   STATUS CHIP (UI ONLY)
-   ===================== */
 
 const StatusChip = ({ status }) => {
   switch (status) {

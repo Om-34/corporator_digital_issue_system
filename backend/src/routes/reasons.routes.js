@@ -8,6 +8,9 @@ const authMiddleware = require("../middlewares/auth.middleware");
 router.post("/", authMiddleware, reasonsController.createReason);
 router.get("/", authMiddleware, reasonsController.getAllReasons);
 router.put("/:id", authMiddleware, reasonsController.updateReason);
+
+// Status Toggle Routes
 router.patch("/:id/deactivate", authMiddleware, reasonsController.deactivateReason);
+router.patch("/:id/activate", authMiddleware, reasonsController.activateReason); // ✅ Added Activate Route
 
 module.exports = router;

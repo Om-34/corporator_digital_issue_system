@@ -78,6 +78,7 @@ exports.createComplaint = async (req, res) => {
     res.status(201).json({
       message: "Complaint registered successfully",
       issueNo,
+      id: complaintId, // 👈 THIS WAS MISSING! NOW FRONTEND CAN UPLOAD.
     });
   } catch (error) {
     console.error(error);
