@@ -39,7 +39,7 @@ const Complaints = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [areaFilter, setAreaFilter] = useState("");
-  
+
   // Date range filters
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -139,7 +139,7 @@ const Complaints = () => {
   const areas = [...new Set(complaints.map((c) => c.area).filter(Boolean))];
 
   // ==========================================
-  // 🖨️ 1. BULK DOWNLOAD JOB CARDS (NEW)
+  // 🖨️ 1. BULK DOWNLOAD JOB CARDS
   // ==========================================
   const downloadAllJobCards = () => {
     // 🛑 Safety Check
@@ -358,6 +358,24 @@ const Complaints = () => {
     setPage(0);
   };
 
+  // =========================
+  // ⏳ PENDING DAYS HELPERS (NEW)
+  // =========================
+  const getPendingDays = (date) => {
+    const created = new Date(date);
+    const today = new Date();
+    const diff = today - created;
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  };
+
+  const getRowHighlight = (complaint) => {
+    const days = getPendingDays(complaint.complaint_date);
+
+    if (complaint.status === "NEW" && days >= 7) return "#fff7ed"; // light orange (Warning)
+    if (complaint.status === "IN_PROCESS" && days >= 14) return "#fee2e2"; // light red (Danger)
+    return "inherit";
+  };
+
   if (loading) {
     return (
       <Box sx={{ p: 3 }}>
@@ -380,10 +398,10 @@ const Complaints = () => {
         <Typography variant="h6">Complaints</Typography>
 
         <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          {/* ✅ NEW: DOWNLOAD JOB CARDS BUTTON */}
-          <Button 
-            variant="outlined" 
-            color="secondary" 
+          {/* BULK DOWNLOAD BUTTON */}
+          <Button
+            variant="outlined"
+            color="secondary"
             onClick={downloadAllJobCards}
             sx={{ fontWeight: "bold", border: "2px solid" }}
           >
@@ -416,7 +434,11 @@ const Complaints = () => {
           mb: 3,
         }}
       >
-        <Paper sx={{ p: 2, bgcolor: "#f8fafc" }} elevation={0} variant="outlined">
+        <Paper
+          sx={{ p: 2, bgcolor: "#f8fafc" }}
+          elevation={0}
+          variant="outlined"
+        >
           <Typography variant="body2" color="textSecondary">
             Total Complaints
           </Typography>
@@ -425,7 +447,11 @@ const Complaints = () => {
           </Typography>
         </Paper>
 
-        <Paper sx={{ p: 2, bgcolor: "#f8fafc" }} elevation={0} variant="outlined">
+        <Paper
+          sx={{ p: 2, bgcolor: "#f8fafc" }}
+          elevation={0}
+          variant="outlined"
+        >
           <Typography variant="body2" color="textSecondary">
             New
           </Typography>
@@ -434,7 +460,11 @@ const Complaints = () => {
           </Typography>
         </Paper>
 
-        <Paper sx={{ p: 2, bgcolor: "#fff7ed" }} elevation={0} variant="outlined">
+        <Paper
+          sx={{ p: 2, bgcolor: "#fff7ed" }}
+          elevation={0}
+          variant="outlined"
+        >
           <Typography variant="body2" color="textSecondary">
             In Process
           </Typography>
@@ -443,7 +473,11 @@ const Complaints = () => {
           </Typography>
         </Paper>
 
-        <Paper sx={{ p: 2, bgcolor: "#f0fdf4" }} elevation={0} variant="outlined">
+        <Paper
+          sx={{ p: 2, bgcolor: "#f0fdf4" }}
+          elevation={0}
+          variant="outlined"
+        >
           <Typography variant="body2" color="textSecondary">
             Completed
           </Typography>
@@ -499,7 +533,12 @@ const Complaints = () => {
           <Button size="small" variant="outlined" onClick={setThisMonth}>
             This Month
           </Button>
-          <Button size="small" color="error" variant="outlined" onClick={clearDates}>
+          <Button
+            size="small"
+            color="error"
+            variant="outlined"
+            onClick={clearDates}
+          >
             Clear
           </Button>
         </Box>
@@ -586,7 +625,11 @@ const Complaints = () => {
               <TableRow
                 key={c.id}
                 hover
-                sx={{ cursor: "pointer" }}
+                sx={{
+                  cursor: "pointer",
+                  // ✅ APPLY ROW HIGHLIGHT
+                  backgroundColor: getRowHighlight(c),
+                }}
                 onClick={() => navigate(`/complaints/${c.id}`)}
               >
                 <TableCell>{c.issue_no}</TableCell>
@@ -597,7 +640,24 @@ const Complaints = () => {
                 <TableCell>{c.area || "-"}</TableCell>
                 <TableCell>{c.reason_name}</TableCell>
                 <TableCell>
-                  <StatusChip status={c.status} />
+                  {/* ✅ STATUS + PENDING DAYS BADGE */}
+                  <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                    <StatusChip status={c.status} />
+
+                    {c.status !== "COMPLETED" && (
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={
+                          getPendingDays(c.complaint_date) >=
+                          (c.status === "NEW" ? 7 : 14)
+                            ? "error"
+                            : "default"
+                        }
+                        label={`PENDING ${getPendingDays(c.complaint_date)} DAYS`}
+                      />
+                    )}
+                  </Box>
                 </TableCell>
                 <TableCell>{c.written_by}</TableCell>
               </TableRow>

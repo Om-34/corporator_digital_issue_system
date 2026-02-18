@@ -112,3 +112,31 @@ exports.deactivateReason = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+// ============================
+// ✅ NEW: ACTIVATE REASON
+// ============================
+exports.activateReason = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    if (req.user.role !== "ADMIN") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const result = await pool.query(
+      `UPDATE reasons
+       SET is_active = true
+       WHERE id = $1`,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: "Reason not found" });
+    }
+
+    res.json({ message: "Reason activated successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
