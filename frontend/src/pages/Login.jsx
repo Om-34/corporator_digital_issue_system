@@ -11,7 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 
-import corporatorImage from "../assets/corporator.jpg";
+import corporatorImage from "../assets/corporator_n.jpg";
 
 const Login = () => {
   // 🔒 LOGIC UNCHANGED
