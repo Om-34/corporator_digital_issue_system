@@ -51,7 +51,7 @@ exports.createComplaint = async (req, res) => {
         status
       )
       VALUES (
-        $1,$2,$3,CURRENT_DATE,$4,$5,$6,$7,$8,$9,$10,$11,$12,'NEW'
+        $1, $2, $3, CURRENT_DATE, $4, $5, $6, $7, $8::uuid, $9, $10, $11, $12, 'NEW'
       )`,
       [
         complaintId,
@@ -61,13 +61,24 @@ exports.createComplaint = async (req, res) => {
         contact,
         address,
         gender,
-        reasonId,
+        reasonId, // This is the UUID from frontend
         description,
         ward_no || null,
         area || null,
         writtenByUserId,
       ]
     );
+
+    // ✅ REAL-TIME ALERT: Notify Operators/Admins in this office
+    const io = req.app.get("io");
+    if (io) {
+      io.to(officeId).emit("new_complaint_alert", {
+        issueNo,
+        personName,
+        area: area || "General",
+        id: complaintId
+      });
+    }
 
     // ✅ FIXED: Fetch actual user name instead of hardcoded "Staff"
     const userRes = await pool.query(`SELECT name FROM users WHERE id = $1`, [writtenByUserId]);
@@ -81,20 +92,47 @@ exports.createComplaint = async (req, res) => {
       id: complaintId, // 👈 THIS WAS MISSING! NOW FRONTEND CAN UPLOAD.
     });
   } catch (error) {
-    console.error(error);
+    console.error("CREATE COMPLAINT ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
 
-// ============================
-// GET ALL COMPLAINTS (OFFICE-WISE)
-// ============================
+// =============================================
+// GET ALL COMPLAINTS (OFFICE-WISE + ROLE ISOLATION)
+// =============================================
 exports.getAllComplaints = async (req, res) => {
   try {
-    const officeId = req.user.officeId;
+    const { officeId, userId, role } = req.user;
+    
+    let query;
+    let queryParams = [];
 
-    const result = await pool.query(
-      `SELECT 
+    // ⚓ DATA ISOLATION LOGIC
+    if (role === 'USER') {
+      // 🛡️ CITIZENS: Only see complaints YOU created
+      query = `SELECT 
+        c.id,
+        c.issue_no,
+        c.complaint_date,
+        c.person_name,
+        c.contact,
+        c.address,
+        c.gender,
+        c.description,
+        c.status,
+        c.ward_no,
+        c.area,
+        r.reason_name,
+        u.name AS written_by
+       FROM complaints c
+       LEFT JOIN reasons r ON c.reason_id = r.id
+       LEFT JOIN users u ON c.written_by_user_id = u.id
+       WHERE c.written_by_user_id = $1
+       ORDER BY c.complaint_date DESC`;
+      queryParams.push(userId);
+    } else {
+      // 🛡️ ADMIN/OPERATOR: See ALL complaints in YOUR office
+      query = `SELECT 
         c.id,
         c.issue_no,
         c.complaint_date,
@@ -112,13 +150,15 @@ exports.getAllComplaints = async (req, res) => {
        LEFT JOIN reasons r ON c.reason_id = r.id
        LEFT JOIN users u ON c.written_by_user_id = u.id
        WHERE c.office_id = $1
-       ORDER BY c.created_at DESC`,
-      [officeId]
-    );
+       ORDER BY c.complaint_date DESC`;
+      queryParams.push(officeId);
+    }
+
+    const result = await pool.query(query, queryParams);
 
     res.json(result.rows);
   } catch (error) {
-    console.error(error);
+    console.error("GET ALL COMPLAINTS ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -129,6 +169,12 @@ exports.getAllComplaints = async (req, res) => {
 exports.updateComplaintStatus = async (req, res) => {
   const { id } = req.params;
   const { newStatus } = req.body;
+  const { officeId, userId, role } = req.user;
+
+  // 🛡️ PERMISSION GUARD: Regular citizens cannot update status
+  if (role === "USER") {
+    return res.status(403).json({ message: "Access denied: Citizens cannot modify status" });
+  }
 
   const allowedStatuses = ["NEW", "IN_PROCESS", "COMPLETED"];
 
@@ -137,10 +183,7 @@ exports.updateComplaintStatus = async (req, res) => {
   }
 
   try {
-    const officeId = req.user.officeId;
-    const userId = req.user.userId;
-
-    // Verify complaint
+    // Verify complaint belongs to this office
     const complaintResult = await pool.query(
       `SELECT status FROM complaints
        WHERE id = $1 AND office_id = $2`,
@@ -221,7 +264,7 @@ exports.updateComplaintStatus = async (req, res) => {
 
     res.json({ message: "Complaint status updated successfully" });
   } catch (error) {
-    console.error(error);
+    console.error("UPDATE STATUS ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -231,10 +274,9 @@ exports.updateComplaintStatus = async (req, res) => {
 // ============================
 exports.getStatusHistory = async (req, res) => {
   const { id } = req.params;
+  const { officeId } = req.user;
 
   try {
-    const officeId = req.user.officeId;
-
     // Verify complaint belongs to office
     const check = await pool.query(
       `SELECT id FROM complaints
@@ -261,7 +303,7 @@ exports.getStatusHistory = async (req, res) => {
 
     res.json(result.rows);
   } catch (error) {
-    console.error(error);
+    console.error("GET STATUS HISTORY ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };

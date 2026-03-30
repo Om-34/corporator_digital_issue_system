@@ -16,11 +16,12 @@ import {
   Divider,
   Chip,
   Grid,
+  CircularProgress,
 } from "@mui/material";
 import CategoryRoundedIcon from "@mui/icons-material/CategoryRounded";
 import PostAddRoundedIcon from "@mui/icons-material/PostAddRounded";
 import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
-import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded"; // Added for Activate icon
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 
 const Reasons = () => {
   const { user } = useContext(AuthContext);
@@ -28,6 +29,7 @@ const Reasons = () => {
 
   const [reasons, setReasons] = useState([]);
   const [reasonName, setReasonName] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user || user.role !== "ADMIN") {
@@ -40,32 +42,53 @@ const Reasons = () => {
   }, []);
 
   const fetchReasons = async () => {
-    const res = await api.get("/reasons");
-    setReasons(res.data);
+    try {
+      setLoading(true);
+      // Backend automatically filters by Admin's office_id via token
+      const res = await api.get("/reasons");
+      setReasons(res.data);
+    } catch (error) {
+      console.error("Failed to fetch reasons:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCreateReason = async (e) => {
     e.preventDefault();
 
-    if (!reasonName) {
-      alert("Enter reason name");
+    if (!reasonName.trim()) {
+      alert("Please enter a category name");
       return;
     }
 
-    await api.post("/reasons", { reasonName });
-    setReasonName("");
-    fetchReasons();
+    try {
+      // Backend assigns office_id automatically
+      await api.post("/reasons", { reasonName });
+      setReasonName("");
+      fetchReasons();
+      alert("Category added successfully! ✅");
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to create category");
+    }
   };
 
   const deactivateReason = async (id) => {
-    await api.patch(`/reasons/${id}/deactivate`);
-    fetchReasons();
+    try {
+      await api.patch(`/reasons/${id}/deactivate`);
+      fetchReasons();
+    } catch (error) {
+      alert("Failed to deactivate category");
+    }
   };
 
-  // ✅ ADDED: Activate Logic
   const activateReason = async (id) => {
-    await api.patch(`/reasons/${id}/activate`);
-    fetchReasons();
+    try {
+      await api.patch(`/reasons/${id}/activate`);
+      fetchReasons();
+    } catch (error) {
+      alert("Failed to activate category");
+    }
   };
 
   return (
@@ -76,7 +99,7 @@ const Reasons = () => {
           Issue Categories
         </Typography>
         <Typography sx={{ color: "#64748b" }}>
-          Configure and manage the types of grievances citizens can report.
+          Configure the types of grievances citizens can report for your ward.
         </Typography>
       </Box>
 
@@ -104,7 +127,7 @@ const Reasons = () => {
               <TextField
                 fullWidth
                 size="small"
-                placeholder="Category Name (e.g. Drainage, Road Safety, garbage)"
+                placeholder="Category Name (e.g. Drainage, Road Safety, Garbage)"
                 value={reasonName}
                 onChange={(e) => setReasonName(e.target.value)}
               />
@@ -141,80 +164,92 @@ const Reasons = () => {
         <Box sx={{ p: 3, display: "flex", alignItems: "center", gap: 1 }}>
           <CategoryRoundedIcon sx={{ color: "#6366f1" }} />
           <Typography variant="h6" sx={{ fontWeight: 700, color: "#334155" }}>
-            Active Categories
+            Ward Specific Categories
           </Typography>
         </Box>
         <Divider />
-        <Table>
-          <TableHead>
-            <TableRow sx={{ bgcolor: "#f8fafc" }}>
-              <TableCell sx={{ fontWeight: 700, color: "#475569" }}>Category Name</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700, color: "#475569" }}>Current Status</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700, color: "#475569", pr: 4 }}>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {reasons.map((r) => (
-              <TableRow key={r.id} hover sx={{ "& td": { py: 2 } }}>
-                <TableCell>
-                  <Typography sx={{ fontWeight: 600, color: "#1e293b" }}>
-                    {r.reason_name}
-                  </Typography>
-                </TableCell>
-                <TableCell align="center">
-                  <Chip
-                    label={r.is_active ? "Active" : "Inactive"}
-                    size="small"
-                    sx={{
-                      fontWeight: 700,
-                      fontSize: "0.7rem",
-                      bgcolor: r.is_active ? "#dcfce7" : "#f1f5f9",
-                      color: r.is_active ? "#166534" : "#475569",
-                      border: "1px solid",
-                      borderColor: r.is_active ? "#bbf7d0" : "#e2e8f0",
-                    }}
-                  />
-                </TableCell>
-                <TableCell align="right" sx={{ pr: 3 }}>
-                  {/* ✅ UPDATED: Toggle between Deactivate and Activate buttons */}
-                  {r.is_active ? (
-                    <Button
-                      size="small"
-                      color="error"
-                      variant="outlined"
-                      startIcon={<BlockRoundedIcon />}
-                      onClick={() => deactivateReason(r.id)}
-                      sx={{ 
-                        borderRadius: 2, 
-                        fontSize: "0.75rem", 
-                        fontWeight: 700,
-                        textTransform: "none"
-                      }}
-                    >
-                      Deactivate
-                    </Button>
-                  ) : (
-                    <Button
-                      size="small"
-                      color="success"
-                      variant="outlined"
-                      startIcon={<CheckCircleRoundedIcon />}
-                      onClick={() => activateReason(r.id)}
-                      sx={{ 
-                        borderRadius: 2, 
-                        fontSize: "0.75rem", 
-                        fontWeight: 700,
-                        textTransform: "none"
-                      }}
-                    >
-                      Activate
-                    </Button>
-                  )}
-                </TableCell>
+        
+        {loading ? (
+          <Box sx={{ p: 4, textAlign: "center" }}><CircularProgress /></Box>
+        ) : (
+          <Table>
+            <TableHead>
+              <TableRow sx={{ bgcolor: "#f8fafc" }}>
+                <TableCell sx={{ fontWeight: 700, color: "#475569" }}>Category Name</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700, color: "#475569" }}>Current Status</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, color: "#475569", pr: 4 }}>Actions</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {reasons.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={3} align="center" sx={{ py: 4 }}>
+                    No categories found. Add your first category above.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                reasons.map((r) => (
+                  <TableRow key={r.id} hover sx={{ "& td": { py: 2 } }}>
+                    <TableCell>
+                      <Typography sx={{ fontWeight: 600, color: "#1e293b" }}>
+                        {r.reason_name}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Chip
+                        label={r.is_active ? "Active" : "Inactive"}
+                        size="small"
+                        sx={{
+                          fontWeight: 700,
+                          fontSize: "0.7rem",
+                          bgcolor: r.is_active ? "#dcfce7" : "#f1f5f9",
+                          color: r.is_active ? "#166534" : "#475569",
+                          border: "1px solid",
+                          borderColor: r.is_active ? "#bbf7d0" : "#e2e8f0",
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell align="right" sx={{ pr: 3 }}>
+                      {r.is_active ? (
+                        <Button
+                          size="small"
+                          color="error"
+                          variant="outlined"
+                          startIcon={<BlockRoundedIcon />}
+                          onClick={() => deactivateReason(r.id)}
+                          sx={{ 
+                            borderRadius: 2, 
+                            fontSize: "0.75rem", 
+                            fontWeight: 700,
+                            textTransform: "none"
+                          }}
+                        >
+                          Deactivate
+                        </Button>
+                      ) : (
+                        <Button
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                          startIcon={<CheckCircleRoundedIcon />}
+                          onClick={() => activateReason(r.id)}
+                          sx={{ 
+                            borderRadius: 2, 
+                            fontSize: "0.75rem", 
+                            fontWeight: 700,
+                            textTransform: "none"
+                          }}
+                        >
+                          Activate
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        )}
       </Paper>
     </Box>
   );

@@ -2,6 +2,7 @@ import { useEffect, useState, useContext } from "react";
 import api from "../api/axios";
 import { AuthContext } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { io } from "socket.io-client"; 
 
 import {
   Box,
@@ -18,6 +19,7 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Avatar,
+  CircularProgress,
 } from "@mui/material";
 
 import TableChartIcon from "@mui/icons-material/TableChart";
@@ -50,6 +52,9 @@ import * as XLSX from "xlsx";
 
 const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#0ea5e9"];
 
+// Initialize socket outside component
+const socket = io("http://localhost:5000");
+
 const Dashboard = () => {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -60,6 +65,7 @@ const Dashboard = () => {
   const [last30Days, setLast30Days] = useState([]);
   const [complaints, setComplaints] = useState([]);
   const [viewMode, setViewMode] = useState("table");
+  const [loading, setLoading] = useState(true); // ✅ Added to prevent white screen
 
   useEffect(() => {
     if (!user) navigate("/");
@@ -67,74 +73,99 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [user]);
+
+  // ==========================================
+  // ⚡ REAL-TIME DASHBOARD UPDATES
+  // ==========================================
+  useEffect(() => {
+    // ✅ Master Guard: Only join room if officeId exists
+    if (user?.officeId) {
+      socket.emit("join_office", user.officeId);
+
+      socket.on("new_complaint_alert", (data) => {
+        setSummary((prev) => (prev ? {
+          ...prev,
+          total: (prev.total || 0) + 1,
+          new: (prev.new || 0) + 1
+        } : prev));
+
+        setStatusWise((prev) => 
+          prev.map((s) => 
+            s.status === "NEW" ? { ...s, count: parseInt(s.count || 0) + 1 } : s
+          )
+        );
+
+        const today = new Date().toISOString().split('T')[0];
+        setLast30Days((prev) => {
+          const exists = prev.find(d => d.date.split('T')[0] === today);
+          if (exists) {
+            return prev.map(d => d.date.split('T')[0] === today ? { ...d, count: parseInt(d.count || 0) + 1 } : d);
+          }
+          return [...prev, { date: today, count: 1 }];
+        });
+      });
+    }
+
+    return () => {
+      socket.off("new_complaint_alert");
+    };
+  }, [user]);
 
   const fetchDashboardData = async () => {
     try {
-      const summaryRes = await api.get("/dashboard/summary");
-      const statusRes = await api.get("/dashboard/status-wise");
-      const categoryRes = await api.get("/dashboard/category-wise");
-      const last30Res = await api.get("/dashboard/last-30-days");
-      const complaintsRes = await api.get("/complaints");
+      setLoading(true);
+      // ✅ Using Promise.allSettled so if one fails (like for Master Admin), others continue
+      const results = await Promise.allSettled([
+        api.get("/dashboard/summary"),
+        api.get("/dashboard/status-wise"),
+        api.get("/dashboard/category-wise"),
+        api.get("/dashboard/last-30-days"),
+        api.get("/complaints")
+      ]);
 
-      setSummary(summaryRes.data);
-      setStatusWise(statusRes.data);
-      setCategoryWise(categoryRes.data);
-      setLast30Days(last30Res.data);
-      setComplaints(complaintsRes.data);
+      setSummary(results[0].status === 'fulfilled' ? results[0].value.data : { total: 0, new: 0, in_process: 0, completed: 0 });
+      setStatusWise(results[1].status === 'fulfilled' ? results[1].value.data : []);
+      setCategoryWise(results[2].status === 'fulfilled' ? results[2].value.data : []);
+      setLast30Days(results[3].status === 'fulfilled' ? results[3].value.data : []);
+      setComplaints(results[4].status === 'fulfilled' ? results[4].value.data : []);
     } catch (error) {
       console.error("Dashboard data fetch failed", error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const exportPDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(14);
-    doc.text("Corporator Office Dashboard Report", 14, 15);
+    doc.text(`${user?.role === 'USER' ? 'My' : 'Office'} Dashboard Report`, 14, 15);
 
     doc.autoTable({
       startY: 25,
       head: [["Metric", "Value"]],
       body: [
-        ["Total Complaints", summary.total],
-        ["New", summary.new],
-        ["In Process", summary.in_process],
-        ["Completed", summary.completed],
+        ["Total Complaints", summary?.total || 0],
+        ["New", summary?.new || 0],
+        ["In Process", summary?.in_process || 0],
+        ["Completed", summary?.completed || 0],
       ],
     });
 
     doc.autoTable({
-      startY: doc.lastAutoTable.finalY + 10,
+      startY: (doc).lastAutoTable.finalY + 10,
       head: [["Status", "Count"]],
       body: statusWise.map((s) => [s.status, s.count]),
-    });
-
-    doc.autoTable({
-      startY: doc.lastAutoTable.finalY + 10,
-      head: [["Category", "Count"]],
-      body: categoryWise.map((c) => [c.category, c.count]),
-    });
-
-    doc.autoTable({
-      startY: doc.lastAutoTable.finalY + 10,
-      head: [["Date", "Count"]],
-      body: last30Days.map((d) => [
-        new Date(d.date).toLocaleDateString(),
-        d.count,
-      ]),
     });
 
     doc.save("dashboard-report.pdf");
   };
 
-  /* =============================================
-        OFFICIAL MULTI-SHEET EXCEL REPORT
-     ============================================= */
   const exportOfficialExcel = () => {
     const wb = XLSX.utils.book_new();
     const dateStamp = new Date().toLocaleDateString();
 
-    const resolutionRate = summary.total > 0 
+    const resolutionRate = (summary?.total > 0) 
       ? ((summary.completed / summary.total) * 100).toFixed(1) 
       : "0";
 
@@ -145,10 +176,10 @@ const Dashboard = () => {
       [],
       ["KEY PERFORMANCE INDICATORS (KPI)"],
       ["Description", "Value", "Official Status"],
-      ["Total Complaint Load", summary.total, "TOTAL LOAD"],
-      ["Unattended Requests", summary.new, "NEW"],
-      ["Active Investigations", summary.in_process, "IN PROCESS"],
-      ["Resolved Issues", summary.completed, "COMPLETED"],
+      ["Total Complaint Load", summary?.total || 0, "TOTAL LOAD"],
+      ["Unattended Requests", summary?.new || 0, "NEW"],
+      ["Active Investigations", summary?.in_process || 0, "IN PROCESS"],
+      ["Resolved Issues", summary?.completed || 0, "COMPLETED"],
       ["Overall Resolution Efficiency", `${resolutionRate}%`, "PERFORMANCE"],
     ];
     const wsSummary = XLSX.utils.aoa_to_sheet(execSummary);
@@ -162,9 +193,9 @@ const Dashboard = () => {
 
     const wsDetailed = XLSX.utils.json_to_sheet(complaints.map((c, i) => ({
       "Sr. No.": i + 1,
-      "Log Date": new Date(c.createdAt).toLocaleDateString(),
+      "Log Date": new Date(c.complaint_date).toLocaleDateString(),
       "Area": c.area || "General",
-      "Category": c.category ? c.category.toUpperCase() : "N/A",
+      "Category": c.reason_name ? c.reason_name.toUpperCase() : "N/A",
       "Status": c.status,
       "Description": c.description || "N/A"
     })));
@@ -188,20 +219,23 @@ const Dashboard = () => {
     return acc;
   }, {});
 
-  if (!summary) {
+  // ✅ PREVENT WHITE SCREEN: Loading or missing summary guard
+  if (loading) {
     return (
-      <Box sx={{ p: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <Typography variant="h6" color="text.secondary">Loading dashboard analytics...</Typography>
+      <Box sx={{ p: 4, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <CircularProgress size={60} sx={{ mb: 2 }} />
+        <Typography variant="h6" color="text.secondary">Initializing System...</Typography>
       </Box>
     );
   }
 
-  const isAdmin = user.role === "ADMIN";
+  const isStaff = user?.role === "ADMIN" || user?.role === "OPERATOR";
+  const isMaster = user?.role === "SUPER_ADMIN";
 
   return (
     <Box sx={{ p: { xs: 2, md: 4 }, bgcolor: "#f8fafc", minHeight: "100vh" }}>
       
-      {/* HEADER SECTION - Glassmorphism Aesthetic */}
+      {/* HEADER SECTION */}
       <Paper
         elevation={0}
         sx={{
@@ -213,10 +247,10 @@ const Dashboard = () => {
       >
         <Box>
           <Typography variant="h4" fontWeight={800} sx={{ color: "#1e293b", letterSpacing: "-0.02em" }}>
-            Dashboard Overview
+            {isMaster ? "Global Control Center" : user?.role === "USER" ? "My Activity" : "Dashboard Overview"}
           </Typography>
           <Typography sx={{ color: "#64748b", fontWeight: 500 }}>
-            Corporator Office Analytics & Performance Summary
+            {isMaster ? "Administering all Ward Offices" : user?.role === "USER" ? "Track your personal grievance history" : "Corporator Office Analytics & Performance Summary"}
           </Typography>
         </Box>
 
@@ -236,25 +270,25 @@ const Dashboard = () => {
             </ToggleButton>
           </ToggleButtonGroup>
 
-          {isAdmin && (
-            <Box sx={{ display: "flex", gap: 1 }}>
-              <Button variant="outlined" onClick={exportPDF} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, borderColor: "#e2e8f0", color: "#475569" }}>
-                Export PDF
-              </Button>
+          <Box sx={{ display: "flex", gap: 1 }}>
+            <Button variant="outlined" onClick={exportPDF} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, borderColor: "#e2e8f0", color: "#475569" }}>
+              Export PDF
+            </Button>
+            {isStaff && (
               <Button variant="contained" disableElevation onClick={exportOfficialExcel} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, bgcolor: "#1e293b", "&:hover": { bgcolor: "#334155" } }}>
                 Official Excel Report
               </Button>
-            </Box>
-          )}
+            )}
+          </Box>
         </Box>
       </Paper>
 
       {/* KPI SUMMARY CARDS */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <StatCard title="Total Complaints" value={summary.total} icon={<AssignmentRoundedIcon />} color="#6366f1" />
-        <StatCard title="New" value={summary.new} icon={<FiberNewRoundedIcon />} color="#0ea5e9" />
-        <StatCard title="In Process" value={summary.in_process} icon={<PendingActionsRoundedIcon />} color="#f59e0b" />
-        <StatCard title="Completed" value={summary.completed} icon={<CheckCircleRoundedIcon />} color="#10b981" />
+        <StatCard title={user?.role === 'USER' ? "My Total" : "Total Complaints"} value={summary?.total || 0} icon={<AssignmentRoundedIcon />} color="#6366f1" />
+        <StatCard title="New" value={summary?.new || 0} icon={<FiberNewRoundedIcon />} color="#0ea5e9" />
+        <StatCard title="In Process" value={summary?.in_process || 0} icon={<PendingActionsRoundedIcon />} color="#f59e0b" />
+        <StatCard title="Completed" value={summary?.completed || 0} icon={<CheckCircleRoundedIcon />} color="#10b981" />
       </Grid>
 
       {viewMode === "table" ? (
@@ -265,7 +299,7 @@ const Dashboard = () => {
                 <SimpleTable
                   headers={["Status", "Count"]}
                   rows={statusWise.map((s) => [
-                    <Box component="span" sx={{ 
+                    <Box key={s.status} component="span" sx={{ 
                         px: 1.5, py: 0.5, borderRadius: 1, fontSize: '0.75rem', fontWeight: 700,
                         bgcolor: s.status === 'COMPLETED' ? '#dcfce7' : s.status === 'IN_PROCESS' ? '#fef3c7' : '#f1f5f9',
                         color: s.status === 'COMPLETED' ? '#166534' : s.status === 'IN_PROCESS' ? '#92400e' : '#475569'
@@ -276,12 +310,12 @@ const Dashboard = () => {
               </DataSection>
             </Grid>
 
-            {isAdmin && (
+            {isStaff && (
               <Grid item xs={12} md={6}>
                 <DataSection title="Category-wise Distribution">
                   <SimpleTable
                     headers={["Category", "Count"]}
-                    rows={categoryWise.map((c) => [c.category, <b>{c.count}</b>])}
+                    rows={categoryWise.map((c) => [c.category, <b key={c.category}>{c.count}</b>])}
                   />
                 </DataSection>
               </Grid>
@@ -289,7 +323,7 @@ const Dashboard = () => {
           </Grid>
 
           <Box sx={{ mt: 3 }}>
-            <DataSection title="Last 30 Days Trend">
+            <DataSection title={user?.role === 'USER' ? "My Submission Trend" : "Last 30 Days Trend"}>
               <SimpleTable
                 headers={["Date", "Count"]}
                 rows={last30Days.map((d) => [
@@ -300,22 +334,20 @@ const Dashboard = () => {
             </DataSection>
           </Box>
 
-          <DataSection title="Area-wise Detailed Performance" sx={{ mt: 3 }}>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ bgcolor: "#f8fafc" }}>
-                  <TableCell sx={{ fontWeight: 700, color: "#475569" }}>Area</TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "#475569" }}>Total</TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "#0ea5e9" }}>New</TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "#f59e0b" }}>In Process</TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "#10b981" }}>Completed</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {Object.keys(areaWiseData).length === 0 ? (
-                  <TableRow><TableCell colSpan={5} align="center">No data available</TableCell></TableRow>
-                ) : (
-                  Object.entries(areaWiseData).map(([area, stats]) => (
+          {isStaff && (
+            <DataSection title="Area-wise Detailed Performance" sx={{ mt: 3 }}>
+              <Table>
+                <TableHead>
+                  <TableRow sx={{ bgcolor: "#f8fafc" }}>
+                    <TableCell sx={{ fontWeight: 700, color: "#475569" }}>Area</TableCell>
+                    <TableCell sx={{ fontWeight: 700, color: "#475569" }}>Total</TableCell>
+                    <TableCell sx={{ fontWeight: 700, color: "#0ea5e9" }}>New</TableCell>
+                    <TableCell sx={{ fontWeight: 700, color: "#f59e0b" }}>In Process</TableCell>
+                    <TableCell sx={{ fontWeight: 700, color: "#10b981" }}>Completed</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {Object.entries(areaWiseData).map(([area, stats]) => (
                     <TableRow key={area} hover sx={{ '& td': { py: 2 } }}>
                       <TableCell sx={{ fontWeight: 600 }}>{area}</TableCell>
                       <TableCell>{stats.total}</TableCell>
@@ -323,11 +355,11 @@ const Dashboard = () => {
                       <TableCell>{stats.IN_PROCESS}</TableCell>
                       <TableCell>{stats.COMPLETED}</TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </DataSection>
+                  ))}
+                </TableBody>
+              </Table>
+            </DataSection>
+          )}
         </>
       ) : (
         <>
@@ -348,7 +380,7 @@ const Dashboard = () => {
               </DataSection>
             </Grid>
 
-            {isAdmin && (
+            {isStaff && (
               <Grid item xs={12} md={6}>
                 <DataSection title="Category Load">
                   <Box sx={{ height: 320, mt: 2 }}>
@@ -370,7 +402,7 @@ const Dashboard = () => {
           </Grid>
 
           <Box sx={{ mt: 3 }}>
-            <DataSection title="30-Day Activity Trend">
+            <DataSection title="Submission Trend">
               <Box sx={{ height: 320, mt: 2 }}>
                 <ResponsiveContainer>
                   <AreaChart data={last30Days} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -396,7 +428,7 @@ const Dashboard = () => {
   );
 };
 
-/* REFINED UI COMPONENTS */
+/* REFINED UI COMPONENTS (Original Logic) */
 
 const StatCard = ({ title, value, icon, color }) => (
   <Grid item xs={12} sm={6} md={3}>

@@ -5,15 +5,13 @@ exports.uploadDocument = async (req, res) => {
   try {
     const { complaintId } = req.params;
 
-    // ❌ Case 1: No file sent
     if (!req.file) {
       return res.status(400).json({
         code: "NO_FILE",
-        message: "No file was received. Please select a file before uploading.",
+        message: "No file received.",
       });
     }
 
-    // ❌ Case 2: Missing complaintId
     if (!complaintId) {
       return res.status(400).json({
         code: "INVALID_COMPLAINT",
@@ -21,10 +19,11 @@ exports.uploadDocument = async (req, res) => {
       });
     }
 
+    // ✅ Added explicit ::uuid casting for the database parameters
     await pool.query(
       `INSERT INTO complaint_documents
-       (id, complaint_id, file_name, file_path)
-       VALUES ($1, $2, $3, $4)`,
+        (id, complaint_id, file_name, file_path)
+        VALUES ($1::uuid, $2::uuid, $3, $4)`,
       [
         uuidv4(),
         complaintId,
@@ -38,16 +37,13 @@ exports.uploadDocument = async (req, res) => {
     });
   } catch (error) {
     console.error("DOCUMENT UPLOAD ERROR:", error);
-
-    // ❌ Case 3: Database or server error
     res.status(500).json({
       code: "SERVER_ERROR",
-      message: "Server failed while saving document. Please try again.",
+      message: "Server failed while saving document.",
     });
   }
 };
 
-// ✅ ADDED: Function to fetch documents for a specific complaint
 exports.getDocumentsByComplaint = async (req, res) => {
   try {
     const { complaintId } = req.params;
@@ -55,8 +51,8 @@ exports.getDocumentsByComplaint = async (req, res) => {
     const result = await pool.query(
       `SELECT id, file_name, file_path
        FROM complaint_documents
-       WHERE complaint_id = $1
-       ORDER BY uploaded_at DESC`, // Note: Ensure your column is 'uploaded_at' or 'created_at' to match your DB
+       WHERE complaint_id = $1::uuid
+       ORDER BY uploaded_at DESC`,
       [complaintId]
     );
 

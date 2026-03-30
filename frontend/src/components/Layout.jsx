@@ -20,6 +20,11 @@ const Layout = ({ children }) => {
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", backgroundColor: "#f8fafc" }}>
       
+      {/* REAL-TIME LISTENER: 
+         This ensures TopBar.jsx logic runs on mobile without appearing in UI 
+      */}
+      {isMobile && <Box sx={{ display: "none" }}><TopBar /></Box>}
+
       {/* MOBILE HEADER - Only shows on small screens */}
       {isMobile && (
         <AppBar 

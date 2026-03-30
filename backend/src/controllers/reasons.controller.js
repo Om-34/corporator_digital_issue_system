@@ -18,11 +18,12 @@ exports.createReason = async (req, res) => {
     }
 
     const id = uuidv4();
+    const officeId = req.user.officeId; // ⚓ THE ANCHOR
 
     await pool.query(
-      `INSERT INTO reasons (id, reason_name)
-       VALUES ($1, $2)`,
-      [id, reasonName]
+      `INSERT INTO reasons (id, office_id, reason_name)
+       VALUES ($1, $2, $3)`,
+      [id, officeId, reasonName]
     );
 
     res.status(201).json({ message: "Reason created successfully" });
@@ -37,10 +38,14 @@ exports.createReason = async (req, res) => {
 // ============================
 exports.getAllReasons = async (req, res) => {
   try {
+    const officeId = req.user.officeId; // ⚓ THE ANCHOR
+
     const result = await pool.query(
       `SELECT id, reason_name, is_active
        FROM reasons
-       ORDER BY reason_name`
+       WHERE office_id = $1
+       ORDER BY reason_name`,
+      [officeId]
     );
 
     res.json(result.rows);
@@ -66,11 +71,13 @@ exports.updateReason = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
+    const officeId = req.user.officeId; // ⚓ THE ANCHOR
+
     const result = await pool.query(
       `UPDATE reasons
        SET reason_name = $1
-       WHERE id = $2`,
-      [reasonName, id]
+       WHERE id = $2 AND office_id = $3`,
+      [reasonName, id, officeId]
     );
 
     if (result.rowCount === 0) {
@@ -95,11 +102,13 @@ exports.deactivateReason = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
+    const officeId = req.user.officeId; // ⚓ THE ANCHOR
+
     const result = await pool.query(
       `UPDATE reasons
        SET is_active = false
-       WHERE id = $1`,
-      [id]
+       WHERE id = $1 AND office_id = $2`,
+      [id, officeId]
     );
 
     if (result.rowCount === 0) {
@@ -112,6 +121,7 @@ exports.deactivateReason = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
 // ============================
 // ✅ NEW: ACTIVATE REASON
 // ============================
@@ -123,11 +133,13 @@ exports.activateReason = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
+    const officeId = req.user.officeId; // ⚓ THE ANCHOR
+
     const result = await pool.query(
       `UPDATE reasons
        SET is_active = true
-       WHERE id = $1`,
-      [id]
+       WHERE id = $1 AND office_id = $2`,
+      [id, officeId]
     );
 
     if (result.rowCount === 0) {

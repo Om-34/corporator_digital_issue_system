@@ -17,6 +17,7 @@ import {
   TextField,
   MenuItem,
   TablePagination,
+  Alert,
 } from "@mui/material";
 
 // ✅ PDF EXPORT TOOLS
@@ -60,9 +61,11 @@ const Complaints = () => {
 
   const fetchComplaints = async () => {
     try {
+      // Backend automatically filters based on token (officeId for staff, userId for citizens)
       const res = await api.get("/complaints");
       setComplaints(res.data);
     } catch (error) {
+      console.error(error);
       alert("Failed to load complaints");
     } finally {
       setLoading(false);
@@ -142,7 +145,6 @@ const Complaints = () => {
   // 🖨️ 1. BULK DOWNLOAD JOB CARDS
   // ==========================================
   const downloadAllJobCards = () => {
-    // 🛑 Safety Check
     if (filteredComplaints.length === 0) {
       alert("No complaints found for selected filters");
       return;
@@ -152,12 +154,8 @@ const Complaints = () => {
       const doc = new jsPDF("p", "mm", "a4");
 
       filteredComplaints.forEach((c, index) => {
-        // Add new page for every complaint except the first one
-        if (index > 0) {
-          doc.addPage();
-        }
+        if (index > 0) doc.addPage();
 
-        // --- HEADER ---
         doc.setFont("helvetica", "bold");
         doc.setFontSize(18);
         doc.text("CORPORATOR OFFICE", 105, 15, { align: "center" });
@@ -168,7 +166,6 @@ const Complaints = () => {
         doc.setLineWidth(0.5);
         doc.line(15, 28, 195, 28);
 
-        // --- ISSUE INFO ---
         doc.setFontSize(11);
         doc.setFont("helvetica", "normal");
         doc.text(`Issue No: ${c.issue_no}`, 15, 36);
@@ -181,7 +178,6 @@ const Complaints = () => {
         doc.setFont("helvetica", "bold");
         doc.text(`Status: ${c.status}`, 15, 44);
 
-        // --- DETAILS TABLE ---
         autoTable(doc, {
           startY: 50,
           head: [["Field", "Details"]],
@@ -200,19 +196,14 @@ const Complaints = () => {
           },
         });
 
-        // --- DESCRIPTION ---
         let y = doc.lastAutoTable.finalY + 10;
         doc.setFont("helvetica", "bold");
         doc.text("Detailed Complaint:", 15, y);
 
         doc.setFont("helvetica", "normal");
-        const desc = doc.splitTextToSize(
-          c.description || "No description",
-          170
-        );
+        const desc = doc.splitTextToSize(c.description || "No description", 170);
         doc.text(desc, 15, y + 8);
 
-        // --- SIGNATURES ---
         const signY = 260;
         doc.line(15, signY, 80, signY);
         doc.text("Worker Signature", 15, signY + 6);
@@ -220,14 +211,8 @@ const Complaints = () => {
         doc.line(120, signY, 190, signY);
         doc.text("Office Signature", 120, signY + 6);
 
-        // --- FOOTER ---
         doc.setFontSize(9);
-        doc.text(
-          "System-generated document",
-          105,
-          285,
-          { align: "center" }
-        );
+        doc.text("System-generated document", 105, 285, { align: "center" });
       });
 
       doc.save(`Job_Cards_${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -243,26 +228,14 @@ const Complaints = () => {
   const exportToPDF = () => {
     try {
       const doc = new jsPDF("l", "pt", "a4");
-
       doc.setFontSize(18);
-      doc.text("Complaints Report", 40, 40);
-
+      doc.text(`${user?.role === "USER" ? "My" : "Office"} Complaints Report`, 40, 40);
       doc.setFontSize(10);
       doc.text(`Generated on: ${new Date().toLocaleString()}`, 40, 60);
 
       autoTable(doc, {
         startY: 80,
-        head: [
-          [
-            "Issue No",
-            "Date",
-            "Person",
-            "Area",
-            "Category",
-            "Status",
-            "Written By",
-          ],
-        ],
+        head: [["Issue No", "Date", "Person", "Area", "Category", "Status", "Written By"]],
         body: filteredComplaints.map((c) => [
           c.issue_no,
           new Date(c.complaint_date).toLocaleDateString(),
@@ -305,16 +278,8 @@ const Complaints = () => {
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Complaints");
-
-    const excelBuffer = XLSX.write(workbook, {
-      bookType: "xlsx",
-      type: "array",
-    });
-
-    const blob = new Blob([excelBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([excelBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     saveAs(blob, `complaints_${Date.now()}.xlsx`);
   };
 
@@ -359,7 +324,7 @@ const Complaints = () => {
   };
 
   // =========================
-  // ⏳ PENDING DAYS HELPERS (NEW)
+  // ⏳ PENDING DAYS HELPERS
   // =========================
   const getPendingDays = (date) => {
     const created = new Date(date);
@@ -369,10 +334,10 @@ const Complaints = () => {
   };
 
   const getRowHighlight = (complaint) => {
+    if (user?.role === "USER") return "inherit"; // Don't highlight for citizens
     const days = getPendingDays(complaint.complaint_date);
-
-    if (complaint.status === "NEW" && days >= 7) return "#fff7ed"; // light orange (Warning)
-    if (complaint.status === "IN_PROCESS" && days >= 14) return "#fee2e2"; // light red (Danger)
+    if (complaint.status === "NEW" && days >= 7) return "#fff7ed"; 
+    if (complaint.status === "IN_PROCESS" && days >= 14) return "#fee2e2"; 
     return "inherit";
   };
 
@@ -395,26 +360,30 @@ const Complaints = () => {
           mb: 2,
         }}
       >
-        <Typography variant="h6">Complaints</Typography>
+        <Typography variant="h6">
+            {user?.role === "USER" ? "My Complaints" : "Manage Office Complaints"}
+        </Typography>
 
         <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          {/* BULK DOWNLOAD BUTTON */}
-          <Button
-            variant="outlined"
-            color="secondary"
-            onClick={downloadAllJobCards}
-            sx={{ fontWeight: "bold", border: "2px solid" }}
-          >
-            Download Job Cards
-          </Button>
-
-          <Button variant="outlined" onClick={exportToPDF}>
-            Export List PDF
-          </Button>
-
-          <Button variant="outlined" onClick={exportToExcel}>
-            Export Excel
-          </Button>
+          {/* ✅ ROLE-BASED ACTION HIDING */}
+          {user?.role !== "USER" && (
+            <>
+              <Button
+                variant="outlined"
+                color="secondary"
+                onClick={downloadAllJobCards}
+                sx={{ fontWeight: "bold", border: "2px solid" }}
+              >
+                Download Job Cards
+              </Button>
+              <Button variant="outlined" onClick={exportToPDF}>
+                Export List PDF
+              </Button>
+              <Button variant="outlined" onClick={exportToExcel}>
+                Export Excel
+              </Button>
+            </>
+          )}
 
           <Button
             variant="contained"
@@ -434,56 +403,24 @@ const Complaints = () => {
           mb: 3,
         }}
       >
-        <Paper
-          sx={{ p: 2, bgcolor: "#f8fafc" }}
-          elevation={0}
-          variant="outlined"
-        >
-          <Typography variant="body2" color="textSecondary">
-            Total Complaints
-          </Typography>
-          <Typography variant="h5" fontWeight={600} color="primary">
-            {totalCount}
-          </Typography>
+        <Paper sx={{ p: 2, bgcolor: "#f8fafc" }} elevation={0} variant="outlined">
+          <Typography variant="body2" color="textSecondary">Total</Typography>
+          <Typography variant="h5" fontWeight={600} color="primary">{totalCount}</Typography>
         </Paper>
 
-        <Paper
-          sx={{ p: 2, bgcolor: "#f8fafc" }}
-          elevation={0}
-          variant="outlined"
-        >
-          <Typography variant="body2" color="textSecondary">
-            New
-          </Typography>
-          <Typography variant="h5" fontWeight={600}>
-            {newCount}
-          </Typography>
+        <Paper sx={{ p: 2, bgcolor: "#f8fafc" }} elevation={0} variant="outlined">
+          <Typography variant="body2" color="textSecondary">New</Typography>
+          <Typography variant="h5" fontWeight={600}>{newCount}</Typography>
         </Paper>
 
-        <Paper
-          sx={{ p: 2, bgcolor: "#fff7ed" }}
-          elevation={0}
-          variant="outlined"
-        >
-          <Typography variant="body2" color="textSecondary">
-            In Process
-          </Typography>
-          <Typography variant="h5" fontWeight={600} color="warning.main">
-            {inProcessCount}
-          </Typography>
+        <Paper sx={{ p: 2, bgcolor: "#fff7ed" }} elevation={0} variant="outlined">
+          <Typography variant="body2" color="textSecondary">In Process</Typography>
+          <Typography variant="h5" fontWeight={600} color="warning.main">{inProcessCount}</Typography>
         </Paper>
 
-        <Paper
-          sx={{ p: 2, bgcolor: "#f0fdf4" }}
-          elevation={0}
-          variant="outlined"
-        >
-          <Typography variant="body2" color="textSecondary">
-            Completed
-          </Typography>
-          <Typography variant="h5" fontWeight={600} color="success.main">
-            {completedCount}
-          </Typography>
+        <Paper sx={{ p: 2, bgcolor: "#f0fdf4" }} elevation={0} variant="outlined">
+          <Typography variant="body2" color="textSecondary">Completed</Typography>
+          <Typography variant="h5" fontWeight={600} color="success.main">{completedCount}</Typography>
         </Paper>
       </Box>
 
@@ -493,10 +430,7 @@ const Complaints = () => {
           label="Search (Name / Issue No)"
           size="small"
           value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(0);
-          }}
+          onChange={(e) => { setSearch(e.target.value); setPage(0); }}
         />
 
         <TextField
@@ -505,10 +439,7 @@ const Complaints = () => {
           size="small"
           InputLabelProps={{ shrink: true }}
           value={fromDate}
-          onChange={(e) => {
-            setFromDate(e.target.value);
-            setPage(0);
-          }}
+          onChange={(e) => { setFromDate(e.target.value); setPage(0); }}
         />
 
         <TextField
@@ -517,30 +448,13 @@ const Complaints = () => {
           size="small"
           InputLabelProps={{ shrink: true }}
           value={toDate}
-          onChange={(e) => {
-            setToDate(e.target.value);
-            setPage(0);
-          }}
+          onChange={(e) => { setToDate(e.target.value); setPage(0); }}
         />
 
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-          <Button size="small" variant="outlined" onClick={setToday}>
-            Today
-          </Button>
-          <Button size="small" variant="outlined" onClick={setLast7Days}>
-            Last 7 Days
-          </Button>
-          <Button size="small" variant="outlined" onClick={setThisMonth}>
-            This Month
-          </Button>
-          <Button
-            size="small"
-            color="error"
-            variant="outlined"
-            onClick={clearDates}
-          >
-            Clear
-          </Button>
+          <Button size="small" variant="outlined" onClick={setToday}>Today</Button>
+          <Button size="small" variant="outlined" onClick={setLast7Days}>7 Days</Button>
+          <Button size="small" variant="outlined" onClick={clearDates}>Clear</Button>
         </Box>
 
         <TextField
@@ -548,10 +462,7 @@ const Complaints = () => {
           label="Status"
           size="small"
           value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value);
-            setPage(0);
-          }}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
           sx={{ minWidth: 150 }}
         >
           <MenuItem value="">All</MenuItem>
@@ -565,37 +476,11 @@ const Complaints = () => {
           label="Category"
           size="small"
           value={categoryFilter}
-          onChange={(e) => {
-            setCategoryFilter(e.target.value);
-            setPage(0);
-          }}
+          onChange={(e) => { setCategoryFilter(e.target.value); setPage(0); }}
           sx={{ minWidth: 200 }}
         >
           <MenuItem value="">All</MenuItem>
-          {categories.map((cat) => (
-            <MenuItem key={cat} value={cat}>
-              {cat}
-            </MenuItem>
-          ))}
-        </TextField>
-
-        <TextField
-          select
-          label="Area"
-          size="small"
-          value={areaFilter}
-          onChange={(e) => {
-            setAreaFilter(e.target.value);
-            setPage(0);
-          }}
-          sx={{ minWidth: 200 }}
-        >
-          <MenuItem value="">All</MenuItem>
-          {areas.map((area) => (
-            <MenuItem key={area} value={area}>
-              {area}
-            </MenuItem>
-          ))}
+          {categories.map((cat) => (<MenuItem key={cat} value={cat}>{cat}</MenuItem>))}
         </TextField>
       </Box>
 
@@ -606,77 +491,58 @@ const Complaints = () => {
             <TableCell>Issue No</TableCell>
             <TableCell>Date</TableCell>
             <TableCell>Person</TableCell>
-            <TableCell>Area</TableCell>
+            {user?.role !== "USER" && <TableCell>Area</TableCell>}
             <TableCell>Category</TableCell>
             <TableCell>Status</TableCell>
-            <TableCell>Written By</TableCell>
+            {user?.role !== "USER" && <TableCell>Written By</TableCell>}
           </TableRow>
         </TableHead>
 
         <TableBody>
           {paginatedComplaints.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} align="center">
-                No matching complaints
-              </TableCell>
+              <TableCell colSpan={7} align="center">No complaints found</TableCell>
             </TableRow>
           ) : (
             paginatedComplaints.map((c) => (
               <TableRow
                 key={c.id}
                 hover
-                sx={{
-                  cursor: "pointer",
-                  // ✅ APPLY ROW HIGHLIGHT
-                  backgroundColor: getRowHighlight(c),
-                }}
+                sx={{ cursor: "pointer", backgroundColor: getRowHighlight(c) }}
                 onClick={() => navigate(`/complaints/${c.id}`)}
               >
                 <TableCell>{c.issue_no}</TableCell>
-                <TableCell>
-                  {new Date(c.complaint_date).toLocaleDateString()}
-                </TableCell>
+                <TableCell>{new Date(c.complaint_date).toLocaleDateString()}</TableCell>
                 <TableCell>{c.person_name}</TableCell>
-                <TableCell>{c.area || "-"}</TableCell>
+                {user?.role !== "USER" && <TableCell>{c.area || "-"}</TableCell>}
                 <TableCell>{c.reason_name}</TableCell>
                 <TableCell>
-                  {/* ✅ STATUS + PENDING DAYS BADGE */}
                   <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
                     <StatusChip status={c.status} />
-
-                    {c.status !== "COMPLETED" && (
+                    {user?.role !== "USER" && c.status !== "COMPLETED" && (
                       <Chip
                         size="small"
                         variant="outlined"
-                        color={
-                          getPendingDays(c.complaint_date) >=
-                          (c.status === "NEW" ? 7 : 14)
-                            ? "error"
-                            : "default"
-                        }
+                        color={getPendingDays(c.complaint_date) >= (c.status === "NEW" ? 7 : 14) ? "error" : "default"}
                         label={`PENDING ${getPendingDays(c.complaint_date)} DAYS`}
                       />
                     )}
                   </Box>
                 </TableCell>
-                <TableCell>{c.written_by}</TableCell>
+                {user?.role !== "USER" && <TableCell>{c.written_by}</TableCell>}
               </TableRow>
             ))
           )}
         </TableBody>
       </Table>
 
-      {/* PAGINATION */}
       <TablePagination
         component="div"
         count={filteredComplaints.length}
         page={page}
         onPageChange={(e, newPage) => setPage(newPage)}
         rowsPerPage={rowsPerPage}
-        onRowsPerPageChange={(e) => {
-          setRowsPerPage(parseInt(e.target.value, 10));
-          setPage(0);
-        }}
+        onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
         rowsPerPageOptions={[5, 10, 20, 50]}
       />
     </Paper>
@@ -685,14 +551,10 @@ const Complaints = () => {
 
 const StatusChip = ({ status }) => {
   switch (status) {
-    case "NEW":
-      return <Chip label="NEW" variant="outlined" />;
-    case "IN_PROCESS":
-      return <Chip label="IN PROCESS" color="warning" />;
-    case "COMPLETED":
-      return <Chip label="COMPLETED" color="success" />;
-    default:
-      return <Chip label={status} />;
+    case "NEW": return <Chip label="NEW" variant="outlined" />;
+    case "IN_PROCESS": return <Chip label="IN PROCESS" color="warning" />;
+    case "COMPLETED": return <Chip label="COMPLETED" color="success" />;
+    default: return <Chip label={status} />;
   }
 };
 

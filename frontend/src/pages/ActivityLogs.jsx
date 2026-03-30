@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useContext } from "react";
 import api from "../api/axios";
+import { AuthContext } from "../context/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 // Material UI Imports
 import {
@@ -15,10 +17,14 @@ import {
   MenuItem,
   Button,
   Chip,
-  TablePagination
+  TablePagination,
+  CircularProgress
 } from "@mui/material";
 
 const ActivityLogs = () => {
+  const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
+
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -32,18 +38,24 @@ const ActivityLogs = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // Fetch logs when page loads
+  // 🛡️ ROLE GUARD
+  useEffect(() => {
+    if (!user || (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN")) {
+      navigate("/dashboard");
+    }
+  }, [user, navigate]);
+
   useEffect(() => {
     fetchLogs();
   }, []);
 
   const fetchLogs = async () => {
     try {
+      setLoading(true);
       const res = await api.get("/activity/logs");
       setLogs(res.data);
     } catch (error) {
       console.error("Error fetching logs:", error);
-      alert("Failed to load activity logs");
     } finally {
       setLoading(false);
     }
@@ -53,20 +65,22 @@ const ActivityLogs = () => {
   // 🧠 SMART FILTER LOGIC
   // ============================
   const filteredLogs = logs.filter((log) => {
-    // 1. Search by Name or Details
-    const searchMatch = 
-      log.user_name.toLowerCase().includes(search.toLowerCase()) || 
-      (log.details && log.details.toLowerCase().includes(search.toLowerCase()));
+    // 🛡️ Null-safe search string construction
+    const initiator = (log.initiator_name || log.user_name || "").toLowerCase();
+    const details = (log.details || "").toLowerCase();
+    const office = (log.office_name || "").toLowerCase();
+    const searchTerm = search.toLowerCase();
 
-    // 2. Filter by Action (e.g., Only show LOGINs)
+    const searchMatch = 
+      initiator.includes(searchTerm) || 
+      details.includes(searchTerm) || 
+      office.includes(searchTerm);
+
     const actionMatch = actionFilter === "ALL" ? true : log.action === actionFilter;
 
-    // 3. Date Range Filter
     const logDate = new Date(log.created_at);
     const startDate = fromDate ? new Date(fromDate) : null;
     const endDate = toDate ? new Date(toDate) : null;
-
-    // Adjust endDate to include the full day
     if (endDate) endDate.setHours(23, 59, 59, 999);
 
     const dateMatch =
@@ -76,18 +90,13 @@ const ActivityLogs = () => {
     return searchMatch && actionMatch && dateMatch;
   });
 
-  // Pagination Logic
   const paginatedLogs = filteredLogs.slice(
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage
   );
 
-  // Get unique Actions for Dropdown (e.g. LOGIN, NEW COMPLAINT)
   const uniqueActions = [...new Set(logs.map(log => log.action))];
 
-  // ============================
-  // RESET FILTERS
-  // ============================
   const clearFilters = () => {
     setSearch("");
     setActionFilter("ALL");
@@ -96,44 +105,63 @@ const ActivityLogs = () => {
     setPage(0);
   };
 
+  const getActionColor = (action) => {
+    switch (action) {
+      case "LOGIN": return "primary";
+      case "NEW COMPLAINT": return "success";
+      case "STATUS UPDATE": return "warning";
+      case "REGISTRATION": return "secondary";
+      case "OFFICE_ONBOARDING": return "info";
+      default: return "default";
+    }
+  };
+
   if (loading) {
     return (
-      <Box sx={{ p: 3 }}>
-        <Typography>Loading logs...</Typography>
+      <Box sx={{ p: 4, textAlign: "center" }}>
+        <CircularProgress />
+        <Typography sx={{ mt: 2 }} color="textSecondary">Fetching audit trails...</Typography>
       </Box>
     );
   }
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-          <Typography variant="h6">User Activity Logs</Typography>
-          <Button variant="outlined" size="small" onClick={clearFilters}>
-            Clear Filters
+    <Box sx={{ p: { xs: 2, md: 4 }, maxWidth: 1400, mx: "auto" }}>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" fontWeight={800} gutterBottom>
+          {user.role === 'SUPER_ADMIN' ? 'Global Activity Audit' : 'Office Audit Logs'}
+        </Typography>
+        <Typography variant="body1" color="textSecondary">
+          {user.role === 'SUPER_ADMIN' 
+            ? 'Monitor activities across all corporator offices in the system.' 
+            : 'Monitor all system activities and staff interactions within your ward office.'}
+        </Typography>
+      </Box>
+
+      <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 3, border: "1px solid #e2e8f0" }}>
+        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
+          <Typography variant="subtitle1" fontWeight={700}>Search & Filters</Typography>
+          <Button variant="text" size="small" onClick={clearFilters} sx={{ textTransform: "none" }}>
+            Reset Filters
           </Button>
         </Box>
 
-        {/* 🔍 FILTER BAR */}
-        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 3 }}>
-          {/* SEARCH */}
+        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 1 }}>
           <TextField
-            label="Search User or Details"
-            variant="outlined"
+            label="Search User, Office or Details"
             size="small"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            sx={{ minWidth: 200 }}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            sx={{ flexGrow: 1, minWidth: 250 }}
           />
 
-          {/* ACTION DROPDOWN */}
           <TextField
             select
             label="Action Type"
             size="small"
             value={actionFilter}
-            onChange={(e) => setActionFilter(e.target.value)}
-            sx={{ minWidth: 150 }}
+            onChange={(e) => { setActionFilter(e.target.value); setPage(0); }}
+            sx={{ minWidth: 180 }}
           >
             <MenuItem value="ALL">All Actions</MenuItem>
             {uniqueActions.map((action) => (
@@ -141,63 +169,76 @@ const ActivityLogs = () => {
             ))}
           </TextField>
 
-          {/* DATE PICKERS */}
           <TextField
-            label="From Date"
+            label="From"
             type="date"
             size="small"
             InputLabelProps={{ shrink: true }}
             value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
+            onChange={(e) => { setFromDate(e.target.value); setPage(0); }}
           />
           <TextField
-            label="To Date"
+            label="To"
             type="date"
             size="small"
             InputLabelProps={{ shrink: true }}
             value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
+            onChange={(e) => { setToDate(e.target.value); setPage(0); }}
           />
         </Box>
+      </Paper>
 
-        {/* 📋 TABLE */}
+      <Paper elevation={0} sx={{ borderRadius: 3, border: "1px solid #e2e8f0", overflow: "hidden" }}>
         <Table>
           <TableHead>
             <TableRow sx={{ bgcolor: "#f8fafc" }}>
-              <TableCell><strong>User</strong></TableCell>
-              <TableCell><strong>Action</strong></TableCell>
-              <TableCell><strong>Details</strong></TableCell>
-              <TableCell><strong>Date & Time</strong></TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Initiated By</TableCell>
+              {user.role === 'SUPER_ADMIN' && (
+                <TableCell sx={{ fontWeight: 700 }}>Ward Office</TableCell>
+              )}
+              <TableCell sx={{ fontWeight: 700 }}>Activity</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Description</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Timestamp</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {paginatedLogs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} align="center" sx={{ py: 3, color: "gray" }}>
-                  No logs found for these filters.
+                <TableCell colSpan={user.role === 'SUPER_ADMIN' ? 5 : 4} align="center" sx={{ py: 6, color: "text.secondary" }}>
+                  No activity matching these criteria.
                 </TableCell>
               </TableRow>
             ) : (
               paginatedLogs.map((log) => (
                 <TableRow key={log.id} hover>
                   <TableCell>
-                    <Typography variant="body2" fontWeight="bold">
-                      {log.user_name}
+                    <Typography variant="body2" fontWeight={600}>
+                      {log.initiator_name || log.user_name || "Unknown User"}
                     </Typography>
-                    <Typography variant="caption" color="textSecondary">
-                      ID: {log.user_id ? log.user_id.substring(0,6) : ""}
+                    <Typography variant="caption" color="textSecondary" sx={{ fontFamily: "monospace" }}>
+                      ID: {log.user_id ? log.user_id.substring(0, 8) : "—"}
                     </Typography>
                   </TableCell>
+                  
+                  {user.role === 'SUPER_ADMIN' && (
+                    <TableCell>
+                      <Typography variant="body2" color="primary" fontWeight={500}>
+                        {log.office_name || "System/Master"}
+                      </Typography>
+                    </TableCell>
+                  )}
+
                   <TableCell>
                     <Chip 
                       label={log.action} 
                       size="small" 
-                      color={log.action === "LOGIN" ? "primary" : "default"} 
-                      variant="outlined" 
+                      color={getActionColor(log.action)} 
+                      variant="filled" 
+                      sx={{ fontSize: "0.65rem", fontWeight: 800 }}
                     />
                   </TableCell>
-                  <TableCell>{log.details || "-"}</TableCell>
-                  <TableCell>
+                  <TableCell sx={{ fontSize: "0.875rem" }}>{log.details || "—"}</TableCell>
+                  <TableCell sx={{ fontSize: "0.875rem", color: "text.secondary" }}>
                     {new Date(log.created_at).toLocaleString()}
                   </TableCell>
                 </TableRow>
@@ -206,7 +247,6 @@ const ActivityLogs = () => {
           </TableBody>
         </Table>
 
-        {/* PAGINATION */}
         <TablePagination
           component="div"
           count={filteredLogs.length}

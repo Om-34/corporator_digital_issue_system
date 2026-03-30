@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
+import { AuthContext } from "../context/AuthContext"; // ✅ Added to check user role
 import {
   Box,
   Button,
@@ -11,6 +12,7 @@ import {
   CircularProgress,
   Grid,
   Divider,
+  Alert,
 } from "@mui/material";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
@@ -18,12 +20,13 @@ import DescriptionIcon from "@mui/icons-material/Description";
 
 const NewComplaint = () => {
   const navigate = useNavigate();
+  const { user } = useContext(AuthContext); // ✅ Access logged-in user info
   const [loading, setLoading] = useState(false);
   const [reasons, setReasons] = useState([]);
 
   // Form States
   const [formData, setFormData] = useState({
-    personName: "",
+    personName: user?.role === "USER" ? user.name : "", // ✅ Auto-fill if Citizen
     contact: "",
     address: "",
     area: "",
@@ -37,8 +40,10 @@ const NewComplaint = () => {
   const [document, setDocument] = useState(null);
 
   useEffect(() => {
-    // Fetch categories (reasons)
-    api.get("/reasons").then((res) => setReasons(res.data)).catch(console.error);
+    // Fetch categories (reasons) - Backend now automatically filters by office_id via token
+    api.get("/reasons")
+      .then((res) => setReasons(res.data))
+      .catch((err) => console.error("Error fetching reasons:", err));
   }, []);
 
   const handleChange = (e) => {
@@ -48,13 +53,14 @@ const NewComplaint = () => {
   // ✅ UPDATED: Smarter Submit Logic (Logic preserved)
   const handleSubmit = async () => {
     if (!formData.personName || !formData.reasonId || !formData.description) {
-      alert("Please fill required fields");
+      alert("Please fill required fields (Name, Category, and Description)");
       return;
     }
 
     setLoading(true);
 
     try {
+      // Backend handles office_id and written_by_user_id automatically from JWT
       const res = await api.post("/complaints", formData);
       const { issueNo, id: complaintId } = res.data;
 
@@ -78,7 +84,7 @@ const NewComplaint = () => {
 
     } catch (error) {
       console.error("Registration Error:", error);
-      alert("Failed to register complaint. Please try again.");
+      alert(error.response?.data?.message || "Failed to register complaint. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -101,7 +107,9 @@ const NewComplaint = () => {
             Register New Complaint
           </Typography>
           <Typography sx={{ color: "#64748b" }}>
-            Fill in the details below to log a new grievance into the system.
+            {user?.role === "USER" 
+              ? "Submit your grievance directly to your ward office." 
+              : "Log a new grievance into the system on behalf of a citizen."}
           </Typography>
         </Box>
 
@@ -118,11 +126,14 @@ const NewComplaint = () => {
               <Grid item xs={12} md={6}>
                 <TextField
                   fullWidth
-                  label="Person Name *"
+                  required
+                  label="Person Name"
                   name="personName"
                   value={formData.personName}
                   onChange={handleChange}
                   variant="outlined"
+                  disabled={user?.role === "USER"} // ✅ Lock name if user is a Citizen
+                  helperText={user?.role === "USER" ? "Name linked to your account" : ""}
                 />
               </Grid>
               <Grid item xs={12} md={6}>
@@ -132,6 +143,7 @@ const NewComplaint = () => {
                   name="contact"
                   value={formData.contact}
                   onChange={handleChange}
+                  placeholder="Citizen's phone number"
                 />
               </Grid>
               <Grid item xs={12} md={4}>
@@ -193,24 +205,30 @@ const NewComplaint = () => {
                 <TextField
                   select
                   fullWidth
-                  label="Complaint Category *"
+                  required
+                  label="Complaint Category"
                   name="reasonId"
                   value={formData.reasonId}
                   onChange={handleChange}
                 >
-                  {reasons.map((r) => (
-                    <MenuItem key={r.id} value={r.id}>
-                      {r.reason_name}
-                    </MenuItem>
-                  ))}
+                  {reasons.length > 0 ? (
+                    reasons.map((r) => (
+                      <MenuItem key={r.id} value={r.id}>
+                        {r.reason_name}
+                      </MenuItem>
+                    ))
+                  ) : (
+                    <MenuItem disabled>No categories available for your ward</MenuItem>
+                  )}
                 </TextField>
               </Grid>
               <Grid item xs={12}>
                 <TextField
                   fullWidth
+                  required
                   multiline
                   rows={4}
-                  label="Detailed Description *"
+                  label="Detailed Description"
                   name="description"
                   value={formData.description}
                   onChange={handleChange}
